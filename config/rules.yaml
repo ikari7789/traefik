@@ -1,0 +1,15 @@
+http:
+  routers:
+    dsm:
+      entryPoints:
+        - websecure
+      rule: "Host(`{{env "DSM_EXTERNAL_DOMAIN"}}`)"
+      service: dsm
+      tls:
+        certResolver: namecheap
+  services:
+    dsm:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+        - url: "{{env "DSM_INTERNAL_URL"}}"

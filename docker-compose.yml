@@ -1,0 +1,66 @@
+---
+networks:
+  default:
+    external: true
+    name: traefik
+
+secrets:
+  namecheap_api_key:
+    file: ./secrets/namecheap_api_key
+  namecheap_api_user:
+    file: ./secrets/namecheap_api_user
+
+services:
+  traefik:
+    command:
+      - "--accesslog"
+      - "--api.dashboard=true"
+      - "--certificatesresolvers.namecheap.acme.dnschallenge.delaybeforecheck=0"
+      - "--certificatesresolvers.namecheap.acme.dnschallenge.provider=namecheap"
+      - "--certificatesresolvers.namecheap.acme.dnschallenge.resolvers=1.1.1.1:53,1.0.0.1:53"
+      - "--certificatesresolvers.namecheap.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.namecheap.acme.storage=/etc/traefik/acme.json"
+      - "--entrypoints.metrics.address=:8082"
+      - "--entrypoints.traefik.address=:8080"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http.tls.certresolver=namecheap"
+      - "--log.level=info"
+      - "--metrics.prometheus=true"
+      - "--ping"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.watch=true"
+      - "--providers.file.filename=/etc/traefik/rules.yaml"
+      - "--serverstransport.insecureskipverify=true"
+      - "--tracing"
+      - "--tracing.jaeger.collector.endpoint=${JAEGER_COLLECTOR_ENDPOINT}"
+      - "--tracing.jaeger.localagenthostport=${JAEGER_LOCAL_AGENT_HOST_PORT}"
+      - "--tracing.jaeger.samplingserverurl=${JAEGER_SAMPLING_SERVER_URL}"
+    environment:
+      DSM_EXTERNAL_DOMAIN:
+      DSM_INTERNAL_URL:
+      NAMECHEAP_API_KEY_FILE: /run/secrets/namecheap_api_key
+      NAMECHEAP_API_USER_FILE: /run/secrets/namecheap_api_user
+    image: traefik:latest
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.traefik-auth.digestauth.usersfile=/etc/traefik/users"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.middlewares=traefik-auth"
+      - "traefik.http.routers.traefik.rule=Host(`${TRAEFIK_EXTERNAL_DOMAIN}`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+    ports:
+      - 80:80
+      - 443:443
+      - 8080:8080
+      - 8082:8082
+    restart: unless-stopped
+    secrets:
+      - namecheap_api_key
+      - namecheap_api_user
+    volumes:
+      - ./config:/etc/traefik
+      - /var/run/docker.sock:/var/run/docker.sock:ro
