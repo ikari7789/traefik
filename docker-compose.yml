@@ -11,22 +11,52 @@ secrets:
     file: ./secrets/namecheap_api_user
 
 services:
+  logrotate:
+     environment:
+       CONTAINER_UID:
+       CONTAINER_GID: 
+       LOGS_DIRECTORIES: /var/log/traefik
+       LOGROTATE_INTERVAL: daily
+       LOGROTATE_COPIES: 10
+     image: blacklabelops/logrotate:latest
+     restart: unless-stopped
+     volumes:
+       - ./log:/var/log/traefik
+
+  whoami:
+    image: traefik/whoami:latest
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.whoami.entrypoints=websecure"
+      - "traefik.http.routers.whoami.rule=Host(`${WHOAMI_EXTERNAL_DOMAIN}`)"
+
   traefik:
     command:
-      - "--accesslog"
+      - "--accesslog.filePath=/var/log/traefik/access.log"
+      - "--accesslog.format=json"
+      - "--accesslog.fields.defaultmode=keep"
+      - "--accesslog.fields.headers.defaultmode=keep"
       - "--api.dashboard=true"
       - "--certificatesresolvers.namecheap.acme.dnschallenge.delaybeforecheck=0"
       - "--certificatesresolvers.namecheap.acme.dnschallenge.provider=namecheap"
       - "--certificatesresolvers.namecheap.acme.dnschallenge.resolvers=1.1.1.1:53,1.0.0.1:53"
       - "--certificatesresolvers.namecheap.acme.email=${ACME_EMAIL}"
       - "--certificatesresolvers.namecheap.acme.storage=/etc/traefik/acme.json"
-      - "--entrypoints.metrics.address=:8082"
-      - "--entrypoints.traefik.address=:8080"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
-      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
-      - "--entrypoints.websecure.address=:443"
-      - "--entrypoints.websecure.http.tls.certresolver=namecheap"
+      - "--entryPoints.metrics.address=:8082"
+      - "--entryPoints.traefik.address=:8080"
+      - "--entryPoints.web.address=:80"
+      - "--entryPoints.web.forwardedHeaders.insecure=true"
+      - "--entryPoints.web.forwardedHeaders.trustedIPs=192.168.0.0/16"
+      - "--entryPoints.web.http.redirections.entryPoint.scheme=https"
+      - "--entryPoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entryPoints.web.proxyProtocol.trustedIPs=192.168.0.0/16"
+      - "--entryPoints.websecure.address=:443"
+      - "--entryPoints.websecure.forwardedHeaders.insecure=true"
+      - "--entryPoints.websecure.forwardedHeaders.trustedIPs=192.168.0.0/16"
+      - "--entryPoints.websecure.http.tls.certresolver=namecheap"
+      - "--entryPoints.websecure.http3"
+      - "--entryPoints.websecure.proxyProtocol.trustedIPs=192.168.0.0/16"
       - "--log.level=info"
       - "--metrics.prometheus=true"
       - "--ping"
@@ -35,10 +65,10 @@ services:
       - "--providers.docker.watch=true"
       - "--providers.file.filename=/etc/traefik/rules.yaml"
       - "--serverstransport.insecureskipverify=true"
-      - "--tracing"
-      - "--tracing.jaeger.collector.endpoint=${JAEGER_COLLECTOR_ENDPOINT}"
-      - "--tracing.jaeger.localagenthostport=${JAEGER_LOCAL_AGENT_HOST_PORT}"
-      - "--tracing.jaeger.samplingserverurl=${JAEGER_SAMPLING_SERVER_URL}"
+      # - "--tracing"
+      # - "--tracing.jaeger.collector.endpoint=${JAEGER_COLLECTOR_ENDPOINT}"
+      # - "--tracing.jaeger.localagenthostport=${JAEGER_LOCAL_AGENT_HOST_PORT}"
+      # - "--tracing.jaeger.samplingserverurl=${JAEGER_SAMPLING_SERVER_URL}"
     environment:
       DSM_EXTERNAL_DOMAIN:
       DSM_INTERNAL_URL:
@@ -53,14 +83,22 @@ services:
       - "traefik.http.routers.traefik.rule=Host(`${TRAEFIK_EXTERNAL_DOMAIN}`)"
       - "traefik.http.routers.traefik.service=api@internal"
     ports:
-      - 80:80
-      - 443:443
+      - target: 80
+        published: 80
+        mode: host
+      - target: 443
+        published: 443
+        mode: host
+      # - 443:443/udp
       - 8080:8080
       - 8082:8082
     restart: unless-stopped
     secrets:
       - namecheap_api_key
       - namecheap_api_user
+    #sysctls:
+    #  - net.core.rmem_max=2500000
     volumes:
       - ./config:/etc/traefik
+      - ./log:/var/log/traefik
       - /var/run/docker.sock:/var/run/docker.sock:ro
